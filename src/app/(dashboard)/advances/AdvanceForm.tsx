@@ -99,10 +99,10 @@ export function AdvanceForm({ defaultValues, onSuccess, onCancel }: Props) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium mb-1">科目</label>
-          <Select value={form.subject} onValueChange={(v) => set("subject", v)}>
+          <Select value={form.subject || "__none__"} onValueChange={(v) => set("subject", v === "__none__" ? "" : v)}>
             <SelectTrigger><SelectValue placeholder="選擇科目" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">不指定</SelectItem>
+              <SelectItem value="__none__">不指定</SelectItem>
               {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>

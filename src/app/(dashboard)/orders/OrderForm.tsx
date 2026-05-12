@@ -114,10 +114,10 @@ export function OrderForm({ defaultValues, onSuccess, onCancel }: Props) {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">分類</label>
-          <Select value={form.categoryZh} onValueChange={(v) => set("categoryZh", v)}>
+          <Select value={form.categoryZh || "__none__"} onValueChange={(v) => set("categoryZh", v === "__none__" ? "" : v)}>
             <SelectTrigger><SelectValue placeholder="選擇分類" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">不指定</SelectItem>
+              <SelectItem value="__none__">不指定</SelectItem>
               {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
