@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
-import { Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, CircleCheck, CircleAlert, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -77,14 +77,14 @@ export function ImportDialog({ open, onClose }: Props) {
 
           {error && (
             <div className="flex items-center gap-2 text-red-500 text-sm">
-              <AlertCircle className="h-4 w-4" />
+              <CircleAlert className="h-4 w-4" />
               {error}
             </div>
           )}
 
           {result && (
             <div className="flex items-center gap-2 text-green-600 text-sm bg-green-50 rounded-lg p-3">
-              <CheckCircle className="h-4 w-4" />
+              <CircleCheck className="h-4 w-4" />
               成功匯入 {result.imported} 筆，略過 {result.skipped} 筆
             </div>
           )}

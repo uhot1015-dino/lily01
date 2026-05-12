@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Plus, CheckCircle, Pencil, Trash2 } from "lucide-react";
+import { Plus, CircleCheck, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -154,7 +154,7 @@ export default function AdvancesPage() {
                       <div className="flex gap-1">
                         {a.status === "PENDING" && isAdmin && (
                           <Button variant="ghost" size="icon" title="核銷" onClick={() => handleReimburse(a)}>
-                            <CheckCircle className="h-4 w-4 text-green-500" />
+                            <CircleCheck className="h-4 w-4 text-green-500" />
                           </Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(a); setShowForm(true); }}>
