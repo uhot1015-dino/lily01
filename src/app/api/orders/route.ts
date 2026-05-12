@@ -24,18 +24,23 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  const orders = await prisma.order.findMany({
-    where,
-    orderBy: { orderDate: "desc" },
-  });
-
-  return NextResponse.json(orders);
+  try {
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { orderDate: "desc" },
+    });
+    return NextResponse.json(orders);
+  } catch (err) {
+    console.error("orders GET error:", err);
+    return NextResponse.json([]);
+  }
 }
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  try {
   const body = await req.json();
 
   const order = await prisma.order.create({
@@ -63,5 +68,9 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(order, { status: 201 });
+    return NextResponse.json(order, { status: 201 });
+  } catch (err) {
+    console.error("orders POST error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }

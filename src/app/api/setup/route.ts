@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import bcrypt from "bcryptjs";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -9,32 +8,36 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  try {
-    const existing = await prisma.user.findUnique({
-      where: { email: "admin@goodlily.com" },
-    });
+  const results: Record<string, string> = {};
 
-    if (existing) {
-      const hash = await bcrypt.hash("goodlily2024", 10);
-      await prisma.user.update({
-        where: { email: "admin@goodlily.com" },
-        data: { passwordHash: hash },
-      });
-      return NextResponse.json({ message: "Admin password reset successfully" });
+  const tables = ["User", "Order", "Advance", "Transaction", "ShippingSlip", "Product", "DropdownOption"];
+
+  for (const table of tables) {
+    try {
+      const count = await (prisma as unknown as Record<string, { count: () => Promise<number> }>)[table.toLowerCase()].count();
+      results[table] = `OK (${count} rows)`;
+    } catch (err) {
+      results[table] = `ERROR: ${String(err).slice(0, 100)}`;
     }
-
-    const hash = await bcrypt.hash("goodlily2024", 10);
-    await prisma.user.create({
-      data: {
-        name: "Admin",
-        email: "admin@goodlily.com",
-        passwordHash: hash,
-        role: "ADMIN",
-      },
-    });
-
-    return NextResponse.json({ message: "Admin user created successfully" });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+
+  // Try to create/update admin user
+  try {
+    const bcrypt = await import("bcryptjs");
+    const hash = await bcrypt.hash("goodlily2024", 10);
+    const existing = await prisma.user.findUnique({ where: { email: "admin@goodlily.com" } });
+    if (existing) {
+      await prisma.user.update({ where: { email: "admin@goodlily.com" }, data: { passwordHash: hash } });
+      results["adminUser"] = "Updated password";
+    } else {
+      await prisma.user.create({
+        data: { name: "Admin", email: "admin@goodlily.com", passwordHash: hash, role: "ADMIN" },
+      });
+      results["adminUser"] = "Created";
+    }
+  } catch (err) {
+    results["adminUser"] = `ERROR: ${String(err).slice(0, 100)}`;
+  }
+
+  return NextResponse.json(results);
 }
