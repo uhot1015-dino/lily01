@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
-export async function GET() {
-  const secret = process.env.SETUP_SECRET;
-  if (!secret || secret !== "goodlily-setup-2024") {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const key = searchParams.get("key");
+  if (key !== "goodlily-setup-2024") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
