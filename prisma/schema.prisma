@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+  PARTIAL
+}
+
+enum AdvanceStatus {
+  PENDING
+  REIMBURSED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(EMPLOYEE)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  transactions Transaction[]
+  advances     Advance[]
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  date           DateTime
+  yearMonth      String
+  weekLabel      String
+  paymentMethod  String
+  needsReimburse Boolean  @default(false)
+  category       String
+  subject        String
+  item           String
+  amount         Float
+  receiptType    String   @default("無憑證")
+  receiptNumber  String?
+  notes          String?
+  approvedBy     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  recorder   User   @relation(fields: [recorderId], references: [id])
+  recorderId String
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  channel        String
+  status         OrderStatus   @default(PENDING)
+  orderNumber    String?
+  categoryZh     String?
+  productName    String
+  spec           String?
+  productCode    String?
+  quantity       Int           @default(1)
+  totalAmount    Float?
+  paymentStatus  PaymentStatus @default(UNPAID)
+  orderDate      DateTime?
+  shippingDate   DateTime?
+  deliveryMethod String?
+  buyerName      String?
+  buyerPhone     String?
+  email          String?
+  recipientName  String?
+  recipientPhone String?
+  address        String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  shippingSlips ShippingSlip[]
+}
+
+model Advance {
+  id          String        @id @default(cuid())
+  date        DateTime
+  person      String
+  amount      Float
+  purpose     String
+  subject     String?
+  item        String?
+  status      AdvanceStatus @default(PENDING)
+  reimburseAt DateTime?
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  submitter   User   @relation(fields: [submitterId], references: [id])
+  submitterId String
+}
+
+model ShippingSlip {
+  id            String    @id @default(cuid())
+  orderId       String
+  enabledFields Json
+  printedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  category  String
+  spec      String?
+  price     Float?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DropdownOption {
+  id        String  @id @default(cuid())
+  group     String
+  value     String
+  label     String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  @@unique([group, value])
+}
