@@ -49,7 +49,8 @@ function ShippingContent() {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     const res = await fetch(`/api/orders?${params}`);
-    const data: Order[] = await res.json();
+    const json = await res.json();
+    const data: Order[] = Array.isArray(json) ? json : [];
     // Filter by shipping date if set
     const filtered = filterDate
       ? data.filter((o) => o.shippingDate && o.shippingDate.startsWith(filterDate))

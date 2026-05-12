@@ -56,12 +56,17 @@ export default function OrdersPage() {
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (filterChannel) params.set("channel", filterChannel);
-    if (filterStatus) params.set("status", filterStatus);
-    if (search) params.set("q", search);
-    const res = await fetch(`/api/orders?${params}`);
-    setOrders(await res.json());
+    try {
+      const params = new URLSearchParams();
+      if (filterChannel) params.set("channel", filterChannel);
+      if (filterStatus) params.set("status", filterStatus);
+      if (search) params.set("q", search);
+      const res = await fetch(`/api/orders?${params}`);
+      const data = await res.json();
+      setOrders(Array.isArray(data) ? data : []);
+    } catch {
+      setOrders([]);
+    }
     setLoading(false);
   }, [filterChannel, filterStatus, search]);
 

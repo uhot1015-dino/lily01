@@ -35,10 +35,15 @@ export default function AdvancesPage() {
 
   const fetchAdvances = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (filterStatus) params.set("status", filterStatus);
-    const res = await fetch(`/api/advances?${params}`);
-    setAdvances(await res.json());
+    try {
+      const params = new URLSearchParams();
+      if (filterStatus) params.set("status", filterStatus);
+      const res = await fetch(`/api/advances?${params}`);
+      const data = await res.json();
+      setAdvances(Array.isArray(data) ? data : []);
+    } catch {
+      setAdvances([]);
+    }
     setLoading(false);
   }, [filterStatus]);
 

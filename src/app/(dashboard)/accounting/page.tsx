@@ -41,9 +41,13 @@ export default function AccountingPage() {
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/transactions?yearMonth=${filterMonth}`);
-    const data = await res.json();
-    setTransactions(data);
+    try {
+      const res = await fetch(`/api/transactions?yearMonth=${filterMonth}`);
+      const data = await res.json();
+      setTransactions(Array.isArray(data) ? data : []);
+    } catch {
+      setTransactions([]);
+    }
     setLoading(false);
   }, [filterMonth]);
 
