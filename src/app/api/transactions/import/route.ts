@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     }
 
     let skipped = 0;
-    const records: Parameters<typeof prisma.transaction.createMany>[0]["data"] = [];
+    const records: import("@prisma/client").Prisma.TransactionCreateManyInput[] = [];
 
     for (let i = headerRow + 1; i < rows.length; i++) {
       const row = rows[i] as unknown[];
