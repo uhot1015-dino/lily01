@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
     // Col 11: amount, Col 13: receiptType, Col 14: receiptNumber,
     // Col 15: notes, Col 16: approvedBy
     const colIdx = {
+      sourceKey: -1,
       date: 3,
       paymentMethod: 6,
       needsReimburse: 7,
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
       if (row.some(c => String(c).includes("日期") || String(c).includes("金額") || String(c).includes("科目"))) {
         headerRow = i;
         const headers = row.map(h => String(h).trim());
+        const skIdx = headers.findIndex(h => h.includes("月份-筆數") || h.includes("月份筆數"));
         const dateIdx = headers.findIndex(h => h === "日期");
         const pmIdx = headers.findIndex(h => h.includes("收付款方式") || h.includes("付款方式"));
         const nrIdx = headers.findIndex(h => h.includes("是否請款") || h.includes("請款"));
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest) {
         const rnIdx = headers.findIndex(h => h.includes("收據") || h.includes("發票編號"));
         const notesIdx = headers.findIndex(h => h === "備註");
         const apIdx = headers.findIndex(h => h.includes("簽核"));
-        // Only override if header detection found something
+        if (skIdx !== -1) colIdx.sourceKey = skIdx;
         if (dateIdx !== -1) colIdx.date = dateIdx;
         if (pmIdx !== -1) colIdx.paymentMethod = pmIdx;
         if (nrIdx !== -1) colIdx.needsReimburse = nrIdx;
@@ -152,8 +154,11 @@ export async function POST(req: NextRequest) {
       const receiptNumber = String(row[colIdx.receiptNumber] ?? "").trim() || null;
       const notes = String(row[colIdx.notes] ?? "").trim() || null;
       const approvedBy = String(row[colIdx.approvedBy] ?? "").trim() || null;
+      const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
+      const sourceKey = sourceKeyRaw || null;
 
       records.push({
+        sourceKey,
         date,
         yearMonth: getYearMonth(date),
         weekLabel: getWeekLabel(date),
@@ -171,12 +176,41 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Batch insert in chunks to avoid query size limits
-    const CHUNK = 500;
+    // Upsert by sourceKey (dedup), or insert new records without a key
     let imported = 0;
-    for (let i = 0; i < records.length; i += CHUNK) {
+    const withKey = records.filter(r => r.sourceKey);
+    const withoutKey = records.filter(r => !r.sourceKey);
+
+    // Upsert records that have a sourceKey
+    for (const record of withKey) {
+      await prisma.transaction.upsert({
+        where: { sourceKey: record.sourceKey! },
+        update: {
+          date: record.date as Date,
+          yearMonth: record.yearMonth as string,
+          weekLabel: record.weekLabel as string,
+          paymentMethod: record.paymentMethod as string,
+          needsReimburse: record.needsReimburse as boolean,
+          category: record.category as string,
+          subject: record.subject as string,
+          item: record.item as string,
+          amount: record.amount as number,
+          receiptType: record.receiptType as string,
+          receiptNumber: record.receiptNumber as string | null,
+          notes: record.notes as string | null,
+          approvedBy: record.approvedBy as string | null,
+          recorderId: record.recorderId as string,
+        },
+        create: record as unknown as Prisma.TransactionCreateInput,
+      });
+      imported++;
+    }
+
+    // Batch insert records without a sourceKey
+    const CHUNK = 500;
+    for (let i = 0; i < withoutKey.length; i += CHUNK) {
       const result = await prisma.transaction.createMany({
-        data: records.slice(i, i + CHUNK),
+        data: withoutKey.slice(i, i + CHUNK),
         skipDuplicates: false,
       });
       imported += result.count;
