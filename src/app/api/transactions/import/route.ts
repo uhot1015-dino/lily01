@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const wb = XLSX.read(buffer, { type: "array", cellDates: false });
 
     // Try to find the right sheet - put 彙整總表(勿編輯) first
-    const targetSheets = ["彙整總表(勿編輯)", "彙整總表", "收支明細", "記帳表（請款零用金）(勿編輯)"];
+    const targetSheets = ["彙整總表(勿編輯)", "彙整總表", "收支明細", "記帳表（請款零用金）(勿編輯)", "記帳表"];
     let ws: XLSX.WorkSheet | null = null;
     let sheetName = "";
     for (const name of targetSheets) {
