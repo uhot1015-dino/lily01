@@ -46,7 +46,6 @@ model User {
 
 model Transaction {
   id             String   @id @default(cuid())
-  sourceKey      String?  @unique
   date           DateTime
   yearMonth      String
   weekLabel      String
