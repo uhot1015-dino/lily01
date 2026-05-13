@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getYearMonth, getWeekLabel } from "@/lib/utils";
 import * as XLSX from "xlsx";
+import type { Prisma } from "@/generated/prisma/client";
 
 function parseDate(val: unknown): Date | null {
   if (!val) return null;
@@ -128,7 +129,7 @@ export async function POST(req: NextRequest) {
     }
 
     let skipped = 0;
-    const records: import("@prisma/client").Prisma.TransactionCreateManyInput[] = [];
+    const records: Prisma.TransactionCreateManyInput[] = [];
 
     for (let i = headerRow + 1; i < rows.length; i++) {
       const row = rows[i] as unknown[];
