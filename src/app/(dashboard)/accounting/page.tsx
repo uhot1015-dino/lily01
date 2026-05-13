@@ -35,6 +35,7 @@ export default function AccountingPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Transaction | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ imported: number; total: number; message: string } | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; sheet: string } | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
@@ -84,18 +85,48 @@ export default function AccountingPage() {
     if (!file) return;
     setImporting(true);
     setImportResult(null);
+    setImportProgress(null);
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/transactions/import", { method: "POST", body: formData });
-    const data = await res.json();
-    setImporting(false);
-    if (res.ok) {
-      setImportResult(data);
-      fetchTransactions();
-    } else {
-      alert("匯入失敗：" + (data.error ?? "未知錯誤"));
+
+    try {
+      const res = await fetch("/api/transactions/import", { method: "POST", body: formData });
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.error) {
+              alert("匯入失敗：" + evt.error);
+            } else if (evt.stage === "done") {
+              setImportResult({ imported: evt.imported, skipped: evt.skipped, sheet: evt.sheet });
+              setImportProgress(null);
+              fetchTransactions();
+            } else if (evt.stage === "importing") {
+              setImportProgress({ imported: evt.imported, total: evt.total, message: evt.message });
+            } else {
+              setImportProgress({ imported: 0, total: 0, message: evt.message });
+            }
+          } catch { /* ignore malformed line */ }
+        }
+      }
+    } catch (err) {
+      alert("匯入失敗：" + String(err));
+    } finally {
+      setImporting(false);
+      e.target.value = "";
     }
-    e.target.value = "";
   }
 
   // Generate month options (current year + 1 previous year)
@@ -118,7 +149,7 @@ export default function AccountingPage() {
         <div className="flex gap-2">
           <label className={`inline-flex items-center gap-2 h-9 px-4 py-2 text-sm font-medium rounded-md border border-neutral-200 bg-white shadow-sm hover:bg-neutral-100 cursor-pointer ${importing ? "opacity-50 pointer-events-none" : ""}`}>
             <Upload className="h-4 w-4" />
-            {importing ? "匯入中…" : "匯入 Excel"}
+            {importing ? (importProgress?.total ? `${importProgress.imported} / ${importProgress.total} 筆` : "處理中…") : "匯入 Excel"}
             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
           </label>
           <Button onClick={() => { setEditItem(null); setShowForm(true); }}>
@@ -145,7 +176,26 @@ export default function AccountingPage() {
         </div>
       </div>
 
-      {importResult && (
+      {importing && importProgress && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+          <div className="flex justify-between mb-1">
+            <span>{importProgress.message}</span>
+            {importProgress.total > 0 && (
+              <span>{importProgress.imported} / {importProgress.total} 筆</span>
+            )}
+          </div>
+          {importProgress.total > 0 && (
+            <div className="w-full bg-blue-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${Math.round((importProgress.imported / importProgress.total) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {importResult && !importing && (
         <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
           ✅ 從「{importResult.sheet}」成功匯入 <strong>{importResult.imported}</strong> 筆，略過 {importResult.skipped} 筆
         </div>
