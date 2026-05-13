@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil, Trash2, Filter, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Filter, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TransactionForm } from "./TransactionForm";
@@ -34,6 +34,8 @@ export default function AccountingPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Transaction | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; sheet: string } | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -77,6 +79,25 @@ export default function AccountingPage() {
     fetchTransactions();
   }
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/transactions/import", { method: "POST", body: formData });
+    const data = await res.json();
+    setImporting(false);
+    if (res.ok) {
+      setImportResult(data);
+      fetchTransactions();
+    } else {
+      alert("匯入失敗：" + (data.error ?? "未知錯誤"));
+    }
+    e.target.value = "";
+  }
+
   // Generate month options (current year + 1 previous year)
   const monthOptions: string[] = [];
   const now = new Date();
@@ -94,9 +115,16 @@ export default function AccountingPage() {
           <h1 className="text-2xl font-bold">收支記帳</h1>
           <p className="text-sm text-neutral-500 mt-1">記錄花店每筆收支明細</p>
         </div>
-        <Button onClick={() => { setEditItem(null); setShowForm(true); }}>
-          <Plus className="h-4 w-4 mr-2" />新增
-        </Button>
+        <div className="flex gap-2">
+          <label className={`inline-flex items-center gap-2 h-9 px-4 py-2 text-sm font-medium rounded-md border border-neutral-200 bg-white shadow-sm hover:bg-neutral-100 cursor-pointer ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+            <Upload className="h-4 w-4" />
+            {importing ? "匯入中…" : "匯入 Excel"}
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
+          </label>
+          <Button onClick={() => { setEditItem(null); setShowForm(true); }}>
+            <Plus className="h-4 w-4 mr-2" />新增
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -116,6 +144,12 @@ export default function AccountingPage() {
           </p>
         </div>
       </div>
+
+      {importResult && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          ✅ 從「{importResult.sheet}」成功匯入 <strong>{importResult.imported}</strong> 筆，略過 {importResult.skipped} 筆
+        </div>
+      )}
 
       {/* Filter */}
       <div className="flex items-center gap-3 mb-4">
