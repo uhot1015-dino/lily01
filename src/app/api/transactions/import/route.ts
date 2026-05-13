@@ -28,6 +28,7 @@ function mapPaymentMethod(val: string): string {
     "銀行轉帳-元大": "銀行轉帳-元大",
     "銀行轉帳-Line Bank": "銀行轉帳-Line Bank",
     "零用金": "零用金",
+    "月結": "銀行轉帳-玉山",
   };
   return map[val] || val || "現金";
 }
@@ -51,9 +52,10 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
     const buffer = await file.arrayBuffer();
-    const wb = XLSX.read(buffer, { type: "array", cellDates: true });
+    // Use cellDates: false so dates come as serial numbers, which we parse manually
+    const wb = XLSX.read(buffer, { type: "array", cellDates: false });
 
-    // Try to find the right sheet
+    // Try to find the right sheet - put 彙整總表(勿編輯) first
     const targetSheets = ["彙整總表(勿編輯)", "彙整總表", "收支明細", "記帳表（請款零用金）(勿編輯)"];
     let ws: XLSX.WorkSheet | null = null;
     let sheetName = "";
@@ -72,44 +74,58 @@ export async function POST(req: NextRequest) {
 
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
 
-    // Find header row
+    // For 彙整總表(勿編輯), use known positional columns directly (row 0 is header)
+    // Col 3: date, Col 6: payment method, Col 7: needsReimburse (O/X),
+    // Col 8: category (收入/支出), Col 9: subject, Col 10: item,
+    // Col 11: amount, Col 13: receiptType, Col 14: receiptNumber,
+    // Col 15: notes, Col 16: approvedBy
+    const colIdx = {
+      date: 3,
+      paymentMethod: 6,
+      needsReimburse: 7,
+      category: 8,
+      subject: 9,
+      item: 10,
+      amount: 11,
+      receiptType: 13,
+      receiptNumber: 14,
+      notes: 15,
+      approvedBy: 16,
+    };
+
+    // Try to detect columns from header row if available, as override
     let headerRow = 0;
     for (let i = 0; i < Math.min(5, rows.length); i++) {
       const row = rows[i] as string[];
       if (row.some(c => String(c).includes("日期") || String(c).includes("金額") || String(c).includes("科目"))) {
         headerRow = i;
+        const headers = row.map(h => String(h).trim());
+        const dateIdx = headers.findIndex(h => h === "日期");
+        const pmIdx = headers.findIndex(h => h.includes("收付款方式") || h.includes("付款方式"));
+        const nrIdx = headers.findIndex(h => h.includes("是否請款") || h.includes("請款"));
+        const catIdx = headers.findIndex(h => h === "項目" || h === "收支");
+        const subIdx = headers.findIndex(h => h === "科目");
+        const itemIdx = headers.findIndex(h => h === "細項");
+        const amtIdx = headers.findIndex(h => h === "金額" && !h.includes("+/-"));
+        const rtIdx = headers.findIndex(h => h.includes("憑證種類") || h.includes("憑證"));
+        const rnIdx = headers.findIndex(h => h.includes("收據") || h.includes("發票編號"));
+        const notesIdx = headers.findIndex(h => h === "備註");
+        const apIdx = headers.findIndex(h => h.includes("簽核"));
+        // Only override if header detection found something
+        if (dateIdx !== -1) colIdx.date = dateIdx;
+        if (pmIdx !== -1) colIdx.paymentMethod = pmIdx;
+        if (nrIdx !== -1) colIdx.needsReimburse = nrIdx;
+        if (catIdx !== -1) colIdx.category = catIdx;
+        if (subIdx !== -1) colIdx.subject = subIdx;
+        if (itemIdx !== -1) colIdx.item = itemIdx;
+        if (amtIdx !== -1) colIdx.amount = amtIdx;
+        if (rtIdx !== -1) colIdx.receiptType = rtIdx;
+        if (rnIdx !== -1) colIdx.receiptNumber = rnIdx;
+        if (notesIdx !== -1) colIdx.notes = notesIdx;
+        if (apIdx !== -1) colIdx.approvedBy = apIdx;
         break;
       }
     }
-    const headers = (rows[headerRow] as string[]).map(h => String(h).trim());
-
-    // Find column indices
-    const colIdx = {
-      date: headers.findIndex(h => h === "日期"),
-      paymentMethod: headers.findIndex(h => h.includes("收付款方式") || h.includes("付款方式")),
-      needsReimburse: headers.findIndex(h => h.includes("是否請款") || h.includes("請款")),
-      category: headers.findIndex(h => h === "項目" || h === "收支"),
-      subject: headers.findIndex(h => h === "科目"),
-      item: headers.findIndex(h => h === "細項"),
-      amount: headers.findIndex(h => h === "金額" && !h.includes("+/-")),
-      receiptType: headers.findIndex(h => h.includes("憑證種類") || h.includes("憑證")),
-      receiptNumber: headers.findIndex(h => h.includes("收據") || h.includes("發票編號")),
-      notes: headers.findIndex(h => h === "備註"),
-      approvedBy: headers.findIndex(h => h.includes("簽核")),
-    };
-
-    // Fallback column positions for 彙整總表 format
-    if (colIdx.date === -1) colIdx.date = 3;
-    if (colIdx.paymentMethod === -1) colIdx.paymentMethod = 6;
-    if (colIdx.needsReimburse === -1) colIdx.needsReimburse = 7;
-    if (colIdx.category === -1) colIdx.category = 8;
-    if (colIdx.subject === -1) colIdx.subject = 9;
-    if (colIdx.item === -1) colIdx.item = 10;
-    if (colIdx.amount === -1) colIdx.amount = 11;
-    if (colIdx.receiptType === -1) colIdx.receiptType = 13;
-    if (colIdx.receiptNumber === -1) colIdx.receiptNumber = 14;
-    if (colIdx.notes === -1) colIdx.notes = 15;
-    if (colIdx.approvedBy === -1) colIdx.approvedBy = 16;
 
     let imported = 0;
     let skipped = 0;

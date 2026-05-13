@@ -31,9 +31,22 @@ export async function GET(req: NextRequest) {
       orderBy: { orderDate: "desc" },
     });
     return NextResponse.json(orders);
-  } catch (err) {
-    console.error("orders GET error:", err);
-    return NextResponse.json([]);
+  } catch {
+    // accountedAt column might not exist yet - use raw query without it
+    try {
+      const orders = await prisma.$queryRaw`
+        SELECT id, channel, status, "orderNumber", "categoryZh", "productName", spec, "productCode",
+               quantity, "totalAmount", "paymentStatus", "orderDate", "shippingDate", "deliveryMethod",
+               "buyerName", "buyerPhone", email, "recipientName", "recipientPhone", address, notes,
+               "createdAt", "updatedAt"
+        FROM "Order"
+        ORDER BY "orderDate" DESC NULLS LAST
+      `;
+      return NextResponse.json(orders);
+    } catch (err2) {
+      console.error("orders GET fallback error:", err2);
+      return NextResponse.json([]);
+    }
   }
 }
 

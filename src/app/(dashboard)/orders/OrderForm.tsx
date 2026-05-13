@@ -66,6 +66,7 @@ export function OrderForm({ defaultValues, onSuccess, onCancel }: Props) {
     notes: defaultValues?.notes ?? "",
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -74,14 +75,25 @@ export function OrderForm({ defaultValues, onSuccess, onCancel }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     const url = isEdit ? `/api/orders/${defaultValues!.id}` : "/api/orders";
-    await fetch(url, {
-      method: isEdit ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    setSaving(false);
-    onSuccess();
+    try {
+      const res = await fetch(url, {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? `伺服器錯誤 (${res.status})`);
+        return;
+      }
+      onSuccess();
+    } catch {
+      setError("網路錯誤，請稍後再試");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -218,6 +230,12 @@ export function OrderForm({ defaultValues, onSuccess, onCancel }: Props) {
         <label className="block text-sm font-medium mb-1">備註</label>
         <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
       </div>
+
+      {error && (
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={saving} className="flex-1">

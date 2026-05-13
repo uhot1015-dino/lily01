@@ -110,6 +110,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         recipientPhone: body.recipientPhone || null,
         address: body.address || null,
         notes: body.notes || null,
+        // Note: accountedAt is NOT updated here - only via actions (account/refund)
       },
     });
 

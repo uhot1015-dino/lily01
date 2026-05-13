@@ -32,6 +32,8 @@ export default function AdvancesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Advance | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
 
   const fetchAdvances = useCallback(async () => {
     setLoading(true);
@@ -41,6 +43,7 @@ export default function AdvancesPage() {
       const res = await fetch(`/api/advances?${params}`);
       const data = await res.json();
       setAdvances(Array.isArray(data) ? data : []);
+      setSelected(new Set());
     } catch {
       setAdvances([]);
     }
@@ -60,6 +63,43 @@ export default function AdvancesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...a, status: "REIMBURSED", reimburseAt: new Date().toISOString() }),
     });
+    fetchAdvances();
+  }
+
+  const pendingAdvances = advances.filter((a) => a.status === "PENDING");
+  const allPendingSelected = pendingAdvances.length > 0 && pendingAdvances.every((a) => selected.has(a.id));
+
+  function toggleSelectAll() {
+    if (allPendingSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(pendingAdvances.map((a) => a.id)));
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBatchReimburse() {
+    const selectedAdvances = advances.filter((a) => selected.has(a.id));
+    if (!confirm(`確定要批次核銷 ${selectedAdvances.length} 筆代墊？`)) return;
+    setBatchLoading(true);
+    await Promise.all(
+      selectedAdvances.map((a) =>
+        fetch(`/api/advances/${a.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...a, status: "REIMBURSED", reimburseAt: new Date().toISOString() }),
+        })
+      )
+    );
+    setBatchLoading(false);
     fetchAdvances();
   }
 
@@ -100,7 +140,7 @@ export default function AdvancesPage() {
       </div>
 
       {/* Filter */}
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3 flex-wrap">
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
@@ -110,6 +150,16 @@ export default function AdvancesPage() {
           <option value="PENDING">待核銷</option>
           <option value="REIMBURSED">已核銷</option>
         </select>
+        {selected.size > 0 && isAdmin && (
+          <Button
+            onClick={handleBatchReimburse}
+            disabled={batchLoading}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            <CircleCheck className="h-4 w-4 mr-2" />
+            {batchLoading ? "核銷中…" : `批次核銷 (${selected.size} 筆)`}
+          </Button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
@@ -117,6 +167,17 @@ export default function AdvancesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50">
+                {isAdmin && (
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allPendingSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-neutral-300"
+                      title="全選待核銷"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">日期</th>
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">代墊人</th>
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">用途</th>
@@ -130,12 +191,24 @@ export default function AdvancesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-12 text-neutral-400">載入中…</td></tr>
+                <tr><td colSpan={isAdmin ? 10 : 9} className="text-center py-12 text-neutral-400">載入中…</td></tr>
               ) : advances.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-12 text-neutral-400">無代墊記錄</td></tr>
+                <tr><td colSpan={isAdmin ? 10 : 9} className="text-center py-12 text-neutral-400">無代墊記錄</td></tr>
               ) : (
                 advances.map((a) => (
                   <tr key={a.id} className="border-b border-neutral-50 hover:bg-neutral-50">
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        {a.status === "PENDING" && (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(a.id)}
+                            onChange={() => toggleSelect(a.id)}
+                            className="rounded border-neutral-300"
+                          />
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 whitespace-nowrap">{formatDate(a.date)}</td>
                     <td className="px-4 py-3 font-medium">{a.person}</td>
                     <td className="px-4 py-3 max-w-[180px] truncate">{a.purpose}</td>
