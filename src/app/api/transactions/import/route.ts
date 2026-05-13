@@ -127,8 +127,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let imported = 0;
     let skipped = 0;
+    const records: Parameters<typeof prisma.transaction.createMany>[0]["data"] = [];
 
     for (let i = headerRow + 1; i < rows.length; i++) {
       const row = rows[i] as unknown[];
@@ -152,29 +152,33 @@ export async function POST(req: NextRequest) {
       const notes = String(row[colIdx.notes] ?? "").trim() || null;
       const approvedBy = String(row[colIdx.approvedBy] ?? "").trim() || null;
 
-      try {
-        await prisma.transaction.create({
-          data: {
-            date,
-            yearMonth: getYearMonth(date),
-            weekLabel: getWeekLabel(date),
-            paymentMethod,
-            needsReimburse,
-            category,
-            subject,
-            item,
-            amount,
-            receiptType,
-            receiptNumber,
-            notes,
-            approvedBy,
-            recorderId: session.user.id,
-          },
-        });
-        imported++;
-      } catch {
-        skipped++;
-      }
+      records.push({
+        date,
+        yearMonth: getYearMonth(date),
+        weekLabel: getWeekLabel(date),
+        paymentMethod,
+        needsReimburse,
+        category,
+        subject,
+        item,
+        amount,
+        receiptType,
+        receiptNumber,
+        notes,
+        approvedBy,
+        recorderId: session.user.id,
+      });
+    }
+
+    // Batch insert in chunks to avoid query size limits
+    const CHUNK = 500;
+    let imported = 0;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const result = await prisma.transaction.createMany({
+        data: records.slice(i, i + CHUNK),
+        skipDuplicates: false,
+      });
+      imported += result.count;
     }
 
     return NextResponse.json({ imported, skipped, sheet: sheetName });
