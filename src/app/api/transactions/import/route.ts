@@ -179,38 +179,22 @@ export async function POST(req: NextRequest) {
     let imported = 0;
     const withKey = records.filter(r => r.sourceKey);
     const withoutKey = records.filter(r => !r.sourceKey);
+    const CHUNK = 500;
 
-    // Try upsert by sourceKey; if the column doesn't exist yet, fall back to plain insert
-    let sourceKeyReady = true;
     if (withKey.length > 0) {
       try {
-        for (const record of withKey) {
-          await prisma.transaction.upsert({
-            where: { sourceKey: record.sourceKey! },
-            update: {
-              date: record.date as Date,
-              yearMonth: record.yearMonth as string,
-              weekLabel: record.weekLabel as string,
-              paymentMethod: record.paymentMethod as string,
-              needsReimburse: record.needsReimburse as boolean,
-              category: record.category as string,
-              subject: record.subject as string,
-              item: record.item as string,
-              amount: record.amount as number,
-              receiptType: record.receiptType as string,
-              receiptNumber: record.receiptNumber as string | null,
-              notes: record.notes as string | null,
-              approvedBy: record.approvedBy as string | null,
-              recorderId: record.recorderId as string,
-            },
-            create: record as unknown as Prisma.TransactionCreateInput,
+        // Bulk dedup: delete existing records with the same sourceKey, then batch insert
+        const keys = withKey.map(r => r.sourceKey!);
+        await prisma.transaction.deleteMany({ where: { sourceKey: { in: keys } } });
+        for (let i = 0; i < withKey.length; i += CHUNK) {
+          const result = await prisma.transaction.createMany({
+            data: withKey.slice(i, i + CHUNK) as Prisma.TransactionCreateManyInput[],
           });
-          imported++;
+          imported += result.count;
         }
       } catch (e: unknown) {
-        // sourceKey column not yet in DB — fall back to bulk insert without dedup
+        // sourceKey column not yet in DB — strip sourceKey and fall back to bulk insert
         if (String(e).includes("sourceKey") || String(e).includes("column")) {
-          sourceKeyReady = false;
           withoutKey.push(...withKey);
         } else {
           throw e;
@@ -218,14 +202,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Batch insert records without a sourceKey (or fallback)
-    const CHUNK = 500;
+    // Batch insert records without a sourceKey
     for (let i = 0; i < withoutKey.length; i += CHUNK) {
-      const chunk = withoutKey.slice(i, i + CHUNK).map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { sourceKey: _sk, ...rest } = r as Record<string, unknown>;
-        return sourceKeyReady ? r : rest;
-      });
+      const chunk = (withoutKey.slice(i, i + CHUNK) as Record<string, unknown>[]).map(
+        ({ sourceKey: _sk, ...rest }) => rest
+      );
       const result = await prisma.transaction.createMany({
         data: chunk as Prisma.TransactionCreateManyInput[],
         skipDuplicates: false,
