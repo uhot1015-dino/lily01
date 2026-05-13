@@ -88,6 +88,7 @@ model Order {
   recipientPhone String?
   address        String?
   notes          String?
+  accountedAt    DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

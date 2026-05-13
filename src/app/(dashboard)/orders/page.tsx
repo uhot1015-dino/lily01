@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Search, Upload, Pencil, Trash2, FileText } from "lucide-react";
+import { Plus, Search, Upload, Pencil, Trash2, FileText, BookCheck, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ interface Order {
   recipientName?: string;
   address?: string;
   notes?: string;
+  accountedAt?: string | null;
 }
 
 const STATUS_BADGE: Record<string, "secondary" | "info" | "success" | "destructive" | "warning"> = {
@@ -75,6 +76,26 @@ export default function OrdersPage() {
   async function handleDelete(id: string) {
     if (!confirm("確定要刪除這筆訂單？")) return;
     await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    fetchOrders();
+  }
+
+  async function handleAccount(o: Order) {
+    if (!confirm(`確定要將「${o.productName}」${o.totalAmount ? formatCurrency(o.totalAmount) : ""} 記入收入帳目？`)) return;
+    await fetch(`/api/orders/${o.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "account" }),
+    });
+    fetchOrders();
+  }
+
+  async function handleRefund(o: Order) {
+    if (!confirm(`確定要退貨「${o.productName}」？${o.accountedAt ? "已記入的收入將會沖銷。" : ""}`)) return;
+    await fetch(`/api/orders/${o.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "refund" }),
+    });
     fetchOrders();
   }
 
@@ -148,14 +169,15 @@ export default function OrdersPage() {
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">付款</th>
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">收件人</th>
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">出貨日</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">帳務</th>
                 <th className="text-left px-4 py-3 font-medium text-neutral-600">操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-12 text-neutral-400">載入中…</td></tr>
+                <tr><td colSpan={11} className="text-center py-12 text-neutral-400">載入中…</td></tr>
               ) : orders.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-12 text-neutral-400">無訂單資料</td></tr>
+                <tr><td colSpan={11} className="text-center py-12 text-neutral-400">無訂單資料</td></tr>
               ) : (
                 orders.map((o) => (
                   <tr key={o.id} className="border-b border-neutral-50 hover:bg-neutral-50">
@@ -182,13 +204,32 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">{o.recipientName ?? o.buyerName ?? "—"}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{o.shippingDate ? formatDate(o.shippingDate) : "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1">
+                      {o.status === "CANCELLED" ? (
+                        <Badge variant="destructive">已取消</Badge>
+                      ) : o.accountedAt ? (
+                        <Badge variant="success">已記帳</Badge>
+                      ) : (
+                        <Badge variant="warning">未記帳</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 flex-wrap">
                         <Link href={`/shipping?orderId=${o.id}`} title="出貨單" className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-neutral-100">
                           <FileText className="h-4 w-4" />
                         </Link>
                         <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }}>
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        {o.status !== "CANCELLED" && !o.accountedAt && (
+                          <Button variant="ghost" size="icon" title="記入帳目" onClick={() => handleAccount(o)}>
+                            <BookCheck className="h-4 w-4 text-green-600" />
+                          </Button>
+                        )}
+                        {o.status !== "CANCELLED" && o.accountedAt && (
+                          <Button variant="ghost" size="icon" title="退貨沖銷" onClick={() => handleRefund(o)}>
+                            <RotateCcw className="h-4 w-4 text-orange-500" />
+                          </Button>
+                        )}
                         {isAdmin && (
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(o.id)}>
                             <Trash2 className="h-4 w-4 text-red-400" />

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getYearMonth, getWeekLabel } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -67,6 +68,28 @@ export async function POST(req: NextRequest) {
       notes: body.notes || null,
     },
   });
+
+    // Auto-account if created as PAID
+    if (order.paymentStatus === "PAID" && order.totalAmount) {
+      const now = new Date();
+      await prisma.transaction.create({
+        data: {
+          date: now,
+          yearMonth: getYearMonth(now),
+          weekLabel: getWeekLabel(now),
+          paymentMethod: "銀行轉帳-玉山",
+          needsReimburse: false,
+          category: "收入",
+          subject: "商品銷售",
+          item: order.channel,
+          amount: order.totalAmount,
+          receiptType: "無憑證",
+          notes: `訂單自動記入：${order.productName}（訂單ID: ${order.id}）`,
+          recorderId: session.user.id,
+        },
+      });
+      await prisma.order.update({ where: { id: order.id }, data: { accountedAt: now } });
+    }
 
     return NextResponse.json(order, { status: 201 });
   } catch (err) {
