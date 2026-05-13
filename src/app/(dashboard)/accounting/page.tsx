@@ -45,7 +45,10 @@ export default function AccountingPage() {
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/transactions?yearMonth=${filterMonth}`);
+      const url = filterMonth === "全部"
+        ? "/api/transactions"
+        : `/api/transactions?yearMonth=${filterMonth}`;
+      const res = await fetch(url);
       const data = await res.json();
       setTransactions(Array.isArray(data) ? data : []);
     } catch {
@@ -129,10 +132,10 @@ export default function AccountingPage() {
     }
   }
 
-  // Generate month options (current year + 1 previous year)
-  const monthOptions: string[] = [];
+  // Generate month options (current year back to 5 years ago) + "全部"
+  const monthOptions: string[] = ["全部"];
   const now = new Date();
-  for (let y = now.getFullYear(); y >= now.getFullYear() - 1; y--) {
+  for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) {
     for (let m = 12; m >= 1; m--) {
       if (y === now.getFullYear() && m > now.getMonth() + 1) continue;
       monthOptions.push(`${y}/${String(m).padStart(2, "0")}`);
