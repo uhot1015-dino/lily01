@@ -153,14 +153,15 @@ export async function POST(req: NextRequest) {
         const amount = typeof amountRaw === "number" ? Math.abs(amountRaw) : parseFloat(String(amountRaw).replace(/,/g, ""));
         if (!amount || isNaN(amount) || amount <= 0) { skipped++; continue; }
 
-        const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
-        if (sourceKeyRaw) {
-          if (seenKeys.has(sourceKeyRaw)) { skipped++; continue; }
-          seenKeys.add(sourceKeyRaw);
-        }
-
         const subject = String(row[colIdx.subject] ?? "").trim() || "＊其他";
         const item = String(row[colIdx.item] ?? "").trim() || "＊其他";
+
+        // Dedup by 月份-筆數 (same file) OR date+amount+subject+item fingerprint
+        const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
+        const fingerprint = sourceKeyRaw || `${date.toISOString().slice(0, 10)}__${amount}__${subject}__${item}`;
+        if (seenKeys.has(fingerprint)) { skipped++; continue; }
+        seenKeys.add(fingerprint);
+
         const paymentMethod = mapPaymentMethod(String(row[colIdx.paymentMethod] ?? "").trim());
         const needsReimburseRaw = String(row[colIdx.needsReimburse] ?? "").trim().toUpperCase();
         const needsReimburse = needsReimburseRaw === "O" || needsReimburseRaw === "TRUE" || needsReimburseRaw === "Y";

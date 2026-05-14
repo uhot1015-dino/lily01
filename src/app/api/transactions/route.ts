@@ -52,3 +52,12 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(transaction, { status: 201 });
 }
+
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const { count } = await prisma.transaction.deleteMany({});
+  return NextResponse.json({ deleted: count });
+}
