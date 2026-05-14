@@ -12,10 +12,12 @@ export async function GET(req: NextRequest) {
   const channel = searchParams.get("channel");
   const status = searchParams.get("status");
   const q = searchParams.get("q");
+  const yearMonth = searchParams.get("yearMonth");
 
   const where: Record<string, unknown> = {};
   if (channel) where.channel = channel;
   if (status) where.status = status;
+  if (yearMonth) where.orderYearMonth = yearMonth;
   if (q) {
     where.OR = [
       { buyerName: { contains: q } },
@@ -109,4 +111,14 @@ export async function POST(req: NextRequest) {
     console.error("orders POST error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  await prisma.shippingSlip.deleteMany({});
+  const { count } = await prisma.order.deleteMany({});
+  return NextResponse.json({ deleted: count });
 }
