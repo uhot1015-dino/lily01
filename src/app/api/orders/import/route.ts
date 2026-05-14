@@ -48,8 +48,6 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  // Read the file buffer BEFORE starting the stream — Vercel releases the
-  // request body once the response begins, so formData must be consumed first.
   let buffer: ArrayBuffer;
   try {
     const formData = await req.formData();
@@ -160,7 +158,7 @@ export async function POST(req: NextRequest) {
       }
 
       const total = records.length;
-      send({ stage: "importing", message: "寫入資料庫中…", imported: 0, total });
+      send({ stage: "importing", message: "寫入訂單中…", imported: 0, total });
 
       let imported = 0;
       const CHUNK = 100;
@@ -173,46 +171,58 @@ export async function POST(req: NextRequest) {
         send({ stage: "importing", imported, total, message: `寫入中… ${imported} / ${total}` });
       }
 
-      // Create income transactions for ALL PAID orders that haven't been accounted yet.
-      // This covers both newly imported orders and any that were imported before without
-      // transactions being created (e.g. due to previous errors or re-imports).
-      send({ stage: "importing", imported, total, message: "建立收入記錄中…" });
-      const unaccountedPaid = await prisma.order.findMany({
+      // Rebuild income transactions for ALL PAID non-cancelled orders.
+      // We delete previously auto-generated ones first to avoid duplicates,
+      // then recreate from every qualifying order regardless of accountedAt state.
+      // This is idempotent and fixes any prior runs that set accountedAt without
+      // creating the corresponding transaction.
+      send({ stage: "importing", imported, total, message: "重建訂單收入記錄中…" });
+
+      await prisma.transaction.deleteMany({
+        where: { notes: { startsWith: "訂單匯入：" } },
+      });
+
+      const paidOrders = await prisma.order.findMany({
         where: {
           paymentStatus: PaymentStatus.PAID,
           totalAmount: { gt: 0 },
-          accountedAt: null,
           status: { not: OrderStatus.CANCELLED },
         },
         select: { id: true, orderDate: true, channel: true, productName: true, totalAmount: true },
       });
 
-      if (unaccountedPaid.length > 0) {
+      if (paidOrders.length > 0) {
         const now = new Date();
-        await prisma.transaction.createMany({
-          data: unaccountedPaid.map(o => {
-            const date = o.orderDate ?? now;
-            return {
-              date,
-              yearMonth: getYearMonth(date),
-              weekLabel: getWeekLabel(date),
-              paymentMethod: "銀行轉帳-玉山",
-              needsReimburse: false,
-              category: "收入",
-              subject: "商品銷售",
-              item: o.channel || "訂單",
-              amount: o.totalAmount!,
-              receiptType: "無憑證",
-              notes: `訂單匯入：${o.productName}`,
-              recorderId: session.user.id,
-            };
-          }),
-          skipDuplicates: false,
-        });
-        // Batch-update accountedAt so these orders are not processed again next import
-        const ids = unaccountedPaid.map(o => o.id);
+        const TX_CHUNK = 500;
+        for (let i = 0; i < paidOrders.length; i += TX_CHUNK) {
+          await prisma.transaction.createMany({
+            data: paidOrders.slice(i, i + TX_CHUNK).map(o => {
+              const date = o.orderDate ?? now;
+              return {
+                date,
+                yearMonth: getYearMonth(date),
+                weekLabel: getWeekLabel(date),
+                paymentMethod: "銀行轉帳-玉山",
+                needsReimburse: false,
+                category: "收入",
+                subject: "商品銷售",
+                item: o.channel || "訂單",
+                amount: o.totalAmount!,
+                receiptType: "無憑證",
+                notes: `訂單匯入：${o.productName}`,
+                recorderId: session.user.id,
+              };
+            }),
+            skipDuplicates: false,
+          });
+        }
+        // Mark all qualifying orders as accounted
         await prisma.order.updateMany({
-          where: { id: { in: ids } },
+          where: {
+            paymentStatus: PaymentStatus.PAID,
+            totalAmount: { gt: 0 },
+            status: { not: OrderStatus.CANCELLED },
+          },
           data: { accountedAt: now },
         });
       }
