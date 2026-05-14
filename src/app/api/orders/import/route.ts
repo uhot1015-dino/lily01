@@ -48,6 +48,20 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
+  // Read the file buffer BEFORE starting the stream — Vercel releases the
+  // request body once the response begins, so formData must be consumed first.
+  let buffer: ArrayBuffer;
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) {
+      return new Response(JSON.stringify({ error: "No file" }), { status: 400 });
+    }
+    buffer = await file.arrayBuffer();
+  } catch {
+    return new Response(JSON.stringify({ error: "Failed to read uploaded file" }), { status: 400 });
+  }
+
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -58,24 +72,20 @@ export async function POST(req: NextRequest) {
 
   (async () => {
     try {
-      const formData = await req.formData();
-      const file = formData.get("file") as File;
-      if (!file) { send({ error: "No file" }); await writer.close(); return; }
-
       send({ stage: "reading", message: "讀取 Excel 中…" });
 
-      const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: "array", cellDates: false });
 
       send({ stage: "parsing", message: "解析工作表中…" });
 
-      // Collect rows from all sheets that look like order data
       const allRows: Record<string, unknown>[] = [];
+      const foundSheets: string[] = [];
       for (const sheetName of wb.SheetNames) {
         const ws = wb.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
         if (data.length > 0 && ("通路" in data[0] || "商品" in data[0])) {
           allRows.push(...data);
+          foundSheets.push(`${sheetName}(${data.length}筆)`);
         }
       }
 
@@ -85,9 +95,8 @@ export async function POST(req: NextRequest) {
         return;
       }
 
-      send({ stage: "parsing", message: `解析 ${allRows.length} 筆資料中…` });
+      send({ stage: "parsing", message: `找到 ${foundSheets.length} 個工作表，共 ${allRows.length} 筆，比對中…`, sheets: foundSheets });
 
-      // Cross-import dedup: fetch existing order fingerprints from DB
       const existingOrders = await prisma.order.findMany({
         select: { orderNumber: true, orderDate: true, productName: true, buyerName: true, totalAmount: true },
       });
@@ -101,7 +110,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const seenKeys = new Set<string>(); // in-file dedup
+      const seenKeys = new Set<string>();
       let skipped = 0;
       const records: Prisma.OrderCreateManyInput[] = [];
 
@@ -117,7 +126,6 @@ export async function POST(req: NextRequest) {
           ? parseFloat(String(totalAmountRaw).replace(/,/g, ""))
           : null;
 
-        // Build fingerprint for dedup
         const dateStr = orderDate ? orderDate.toISOString().slice(0, 10) : "nodate";
         const fingerprint = orderNumber
           ? `order:${orderNumber}`
@@ -165,7 +173,6 @@ export async function POST(req: NextRequest) {
         send({ stage: "importing", imported, total, message: `寫入中… ${imported} / ${total}` });
       }
 
-      // Auto-create income transactions for PAID orders with amounts
       const paidRecords = records.filter(
         r => r.paymentStatus === PaymentStatus.PAID && r.totalAmount && r.totalAmount > 0 && r.status !== OrderStatus.CANCELLED
       );
@@ -191,14 +198,13 @@ export async function POST(req: NextRequest) {
           }),
           skipDuplicates: false,
         });
-        // Mark all unaccounted PAID orders as accounted
         await prisma.order.updateMany({
           where: { paymentStatus: PaymentStatus.PAID, totalAmount: { gt: 0 }, accountedAt: null, status: { not: OrderStatus.CANCELLED } },
           data: { accountedAt: now },
         });
       }
 
-      send({ stage: "done", imported, skipped, total });
+      send({ stage: "done", imported, skipped, total, sheets: foundSheets });
     } catch (err) {
       send({ error: String(err) });
     } finally {

@@ -79,7 +79,6 @@ model Order {
   totalAmount    Float?
   paymentStatus  PaymentStatus @default(UNPAID)
   orderDate      DateTime?
-  orderYearMonth String?
   shippingDate   DateTime?
   deliveryMethod String?
   buyerName      String?

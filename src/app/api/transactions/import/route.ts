@@ -46,6 +46,30 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
   }
 
+  // Read the file buffer BEFORE starting the stream — Vercel releases the
+  // request body once the response begins, so formData must be consumed first.
+  let buffer: ArrayBuffer;
+  let sheetName = "";
+  let ws: XLSX.WorkSheet;
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) {
+      return new Response(JSON.stringify({ error: "No file" }), { status: 400 });
+    }
+    buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: "array", cellDates: false });
+    const targetSheets = ["彙整總表(勿編輯)", "彙整總表", "收支明細", "記帳表（請款零用金）(勿編輯)", "記帳表"];
+    let found: XLSX.WorkSheet | null = null;
+    for (const name of targetSheets) {
+      if (wb.SheetNames.includes(name)) { found = wb.Sheets[name]; sheetName = name; break; }
+    }
+    if (!found) { found = wb.Sheets[wb.SheetNames[0]]; sheetName = wb.SheetNames[0]; }
+    ws = found;
+  } catch {
+    return new Response(JSON.stringify({ error: "Failed to read uploaded file" }), { status: 400 });
+  }
+
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -56,33 +80,7 @@ export async function POST(req: NextRequest) {
 
   (async () => {
     try {
-      const formData = await req.formData();
-      const file = formData.get("file") as File;
-      if (!file) {
-        send({ error: "No file" });
-        await writer.close();
-        return;
-      }
-
-      send({ stage: "reading", message: "讀取 Excel 中…" });
-
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array", cellDates: false });
-
-      const targetSheets = ["彙整總表(勿編輯)", "彙整總表", "收支明細", "記帳表（請款零用金）(勿編輯)", "記帳表"];
-      let ws: XLSX.WorkSheet | null = null;
-      let sheetName = "";
-      for (const name of targetSheets) {
-        if (wb.SheetNames.includes(name)) {
-          ws = wb.Sheets[name];
-          sheetName = name;
-          break;
-        }
-      }
-      if (!ws) {
-        ws = wb.Sheets[wb.SheetNames[0]];
-        sheetName = wb.SheetNames[0];
-      }
+      send({ stage: "parsing", message: "解析資料中…" });
 
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
 
@@ -135,9 +133,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      send({ stage: "parsing", message: "解析資料中…" });
-
-      const seenKeys = new Set<string>(); // in-file dedup
+      const seenKeys = new Set<string>();
       let skipped = 0;
       const records: Prisma.TransactionCreateManyInput[] = [];
       const fingerprints: string[] = [];
@@ -157,7 +153,6 @@ export async function POST(req: NextRequest) {
         const subject = String(row[colIdx.subject] ?? "").trim() || "＊其他";
         const item = String(row[colIdx.item] ?? "").trim() || "＊其他";
 
-        // Dedup by 月份-筆數 (same file) OR date+amount+subject+item fingerprint
         const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
         const fingerprint = sourceKeyRaw || `${date.toISOString().slice(0, 10)}__${amount}__${subject}__${item}`;
         if (seenKeys.has(fingerprint)) { skipped++; continue; }
@@ -190,7 +185,6 @@ export async function POST(req: NextRequest) {
         fingerprints.push(fingerprint);
       }
 
-      // Cross-import dedup: fetch existing records from DB and skip matches
       send({ stage: "parsing", message: "比對資料庫中已有記錄…" });
       const existing = await prisma.transaction.findMany({
         select: { date: true, amount: true, subject: true, item: true },
