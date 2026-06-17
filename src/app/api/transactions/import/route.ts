@@ -137,6 +137,7 @@ export async function POST(req: NextRequest) {
 
       send({ stage: "parsing", message: "解析資料中…" });
 
+      const seenKeys = new Set<string>();
       let skipped = 0;
       const records: Prisma.TransactionCreateManyInput[] = [];
 
@@ -152,6 +153,12 @@ export async function POST(req: NextRequest) {
         const amount = typeof amountRaw === "number" ? Math.abs(amountRaw) : parseFloat(String(amountRaw).replace(/,/g, ""));
         if (!amount || isNaN(amount) || amount <= 0) { skipped++; continue; }
 
+        const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
+        if (sourceKeyRaw) {
+          if (seenKeys.has(sourceKeyRaw)) { skipped++; continue; }
+          seenKeys.add(sourceKeyRaw);
+        }
+
         const subject = String(row[colIdx.subject] ?? "").trim() || "＊其他";
         const item = String(row[colIdx.item] ?? "").trim() || "＊其他";
         const paymentMethod = mapPaymentMethod(String(row[colIdx.paymentMethod] ?? "").trim());
@@ -161,11 +168,8 @@ export async function POST(req: NextRequest) {
         const receiptNumber = String(row[colIdx.receiptNumber] ?? "").trim() || null;
         const notes = String(row[colIdx.notes] ?? "").trim() || null;
         const approvedBy = String(row[colIdx.approvedBy] ?? "").trim() || null;
-        const sourceKeyRaw = colIdx.sourceKey !== -1 ? String(row[colIdx.sourceKey] ?? "").trim() : "";
-        const sourceKey = sourceKeyRaw || null;
 
         records.push({
-          sourceKey,
           date,
           yearMonth: getYearMonth(date),
           weekLabel: getWeekLabel(date),
@@ -187,36 +191,10 @@ export async function POST(req: NextRequest) {
       send({ stage: "importing", message: "寫入資料庫中…", imported: 0, total });
 
       let imported = 0;
-      const withKey = records.filter(r => r.sourceKey);
-      const withoutKey = records.filter(r => !r.sourceKey);
       const CHUNK = 500;
-
-      if (withKey.length > 0) {
-        try {
-          const keys = withKey.map(r => r.sourceKey!);
-          await prisma.transaction.deleteMany({ where: { sourceKey: { in: keys } } });
-          for (let i = 0; i < withKey.length; i += CHUNK) {
-            const result = await prisma.transaction.createMany({
-              data: withKey.slice(i, i + CHUNK) as Prisma.TransactionCreateManyInput[],
-            });
-            imported += result.count;
-            send({ stage: "importing", imported, total, message: `寫入中… ${imported} / ${total}` });
-          }
-        } catch (e: unknown) {
-          if (String(e).includes("sourceKey") || String(e).includes("column")) {
-            withoutKey.push(...withKey);
-          } else {
-            throw e;
-          }
-        }
-      }
-
-      for (let i = 0; i < withoutKey.length; i += CHUNK) {
-        const chunk = (withoutKey.slice(i, i + CHUNK) as Record<string, unknown>[]).map(
-          ({ sourceKey: _sk, ...rest }) => rest
-        );
+      for (let i = 0; i < records.length; i += CHUNK) {
         const result = await prisma.transaction.createMany({
-          data: chunk as Prisma.TransactionCreateManyInput[],
+          data: records.slice(i, i + CHUNK),
           skipDuplicates: false,
         });
         imported += result.count;
