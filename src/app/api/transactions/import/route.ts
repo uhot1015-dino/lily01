@@ -137,9 +137,10 @@ export async function POST(req: NextRequest) {
 
       send({ stage: "parsing", message: "解析資料中…" });
 
-      const seenKeys = new Set<string>();
+      const seenKeys = new Set<string>(); // in-file dedup
       let skipped = 0;
       const records: Prisma.TransactionCreateManyInput[] = [];
+      const fingerprints: string[] = [];
 
       for (let i = headerRow + 1; i < rows.length; i++) {
         const row = rows[i] as unknown[];
@@ -186,16 +187,28 @@ export async function POST(req: NextRequest) {
           approvedBy,
           recorderId: session.user.id,
         });
+        fingerprints.push(fingerprint);
       }
 
-      const total = records.length;
+      // Cross-import dedup: fetch existing records from DB and skip matches
+      send({ stage: "parsing", message: "比對資料庫中已有記錄…" });
+      const existing = await prisma.transaction.findMany({
+        select: { date: true, amount: true, subject: true, item: true },
+      });
+      const existingFPs = new Set(
+        existing.map(t => `${t.date.toISOString().slice(0, 10)}__${t.amount}__${t.subject}__${t.item}`)
+      );
+      const toInsert = records.filter((_, i) => !existingFPs.has(fingerprints[i]));
+      skipped += records.length - toInsert.length;
+
+      const total = toInsert.length;
       send({ stage: "importing", message: "寫入資料庫中…", imported: 0, total });
 
       let imported = 0;
       const CHUNK = 500;
-      for (let i = 0; i < records.length; i += CHUNK) {
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
         const result = await prisma.transaction.createMany({
-          data: records.slice(i, i + CHUNK),
+          data: toInsert.slice(i, i + CHUNK),
           skipDuplicates: false,
         });
         imported += result.count;

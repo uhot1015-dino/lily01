@@ -52,6 +52,7 @@ export default function OrdersPage() {
   const [editItem, setEditItem] = useState<Order | null>(null);
   const [filterChannel, setFilterChannel] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterMonth, setFilterMonth] = useState("全部");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
 
@@ -61,6 +62,7 @@ export default function OrdersPage() {
       const params = new URLSearchParams();
       if (filterChannel) params.set("channel", filterChannel);
       if (filterStatus) params.set("status", filterStatus);
+      if (filterMonth !== "全部") params.set("yearMonth", filterMonth);
       if (search) params.set("q", search);
       const res = await fetch(`/api/orders?${params}`);
       const data = await res.json();
@@ -69,7 +71,7 @@ export default function OrdersPage() {
       setOrders([]);
     }
     setLoading(false);
-  }, [filterChannel, filterStatus, search]);
+  }, [filterChannel, filterStatus, filterMonth, search]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -105,6 +107,18 @@ export default function OrdersPage() {
     fetchOrders();
   }
 
+  async function handleClearAll() {
+    if (!confirm("確定要清除所有訂單資料？此操作無法復原。")) return;
+    const res = await fetch("/api/orders", { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`已清除 ${data.deleted} 筆訂單`);
+      fetchOrders();
+    } else {
+      alert("清除失敗：" + (data.error ?? "未知錯誤"));
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -113,8 +127,13 @@ export default function OrdersPage() {
           <p className="text-sm text-neutral-500 mt-1">管理各通路訂單</p>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
+            <Button variant="outline" onClick={handleClearAll} className="text-red-500 border-red-200 hover:bg-red-50">
+              清除全部
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setShowImport(true)}>
-            <Upload className="h-4 w-4 mr-2" />匯入 Excel/CSV
+            <Upload className="h-4 w-4 mr-2" />匯入 Excel
           </Button>
           <Button onClick={() => { setEditItem(null); setShowForm(true); }}>
             <Plus className="h-4 w-4 mr-2" />新增訂單
@@ -135,6 +154,23 @@ export default function OrdersPage() {
           />
           <Button size="sm" variant="outline" onClick={() => setSearch(searchInput)}>搜尋</Button>
         </div>
+        <select
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          className="text-sm border border-neutral-200 rounded-md px-3 py-1.5 bg-white"
+        >
+          {(() => {
+            const opts = ["全部"];
+            const now = new Date();
+            for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) {
+              for (let m = 12; m >= 1; m--) {
+                if (y === now.getFullYear() && m > now.getMonth() + 1) continue;
+                opts.push(`${y}/${String(m).padStart(2, "0")}`);
+              }
+            }
+            return opts.map(o => <option key={o} value={o}>{o}</option>);
+          })()}
+        </select>
         <select
           value={filterChannel}
           onChange={(e) => setFilterChannel(e.target.value)}

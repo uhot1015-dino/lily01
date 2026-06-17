@@ -132,6 +132,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!session?.user?.role || session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  await prisma.order.delete({ where: { id: (await params).id } });
+  const id = (await params).id;
+  await prisma.shippingSlip.deleteMany({ where: { orderId: id } });
+  await prisma.order.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
