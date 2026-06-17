@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {};
   if (channel) where.channel = channel;
   if (status) where.status = status;
-  if (yearMonth) where.orderYearMonth = yearMonth;
+  if (yearMonth) {
+    const [y, m] = yearMonth.split("/").map(Number);
+    where.orderDate = { gte: new Date(y, m - 1, 1), lt: new Date(y, m, 1) };
+  }
   if (q) {
     where.OR = [
       { buyerName: { contains: q } },

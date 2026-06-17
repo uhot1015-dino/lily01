@@ -18,11 +18,6 @@ function parseDate(val: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function getOrderYearMonth(date: Date | null): string | null {
-  if (!date) return null;
-  return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function mapStatus(val: string): OrderStatus {
   const s = val.trim();
   if (s.includes("取消")) return OrderStatus.CANCELLED;
@@ -143,7 +138,6 @@ export async function POST(req: NextRequest) {
           totalAmount: totalAmount && !isNaN(totalAmount) ? totalAmount : null,
           paymentStatus: mapPayment(String(row["付款狀態"] ?? "")),
           orderDate,
-          orderYearMonth: getOrderYearMonth(orderDate),
           shippingDate: parseDate(row["出貨日期/上課時間"] ?? row["出貨日期"]),
           deliveryMethod: String(row["配送方式"] ?? "").trim() || null,
           buyerName,
