@@ -37,6 +37,7 @@ export default function AccountingPage() {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ imported: number; total: number; message: string } | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; sheet: string } | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -44,15 +45,22 @@ export default function AccountingPage() {
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
+    setApiError(null);
     try {
       const url = filterMonth === "全部"
         ? "/api/transactions"
         : `/api/transactions?yearMonth=${filterMonth}`;
       const res = await fetch(url);
       const data = await res.json();
-      setTransactions(Array.isArray(data) ? data : []);
-    } catch {
+      if (Array.isArray(data)) {
+        setTransactions(data);
+      } else {
+        setTransactions([]);
+        setApiError(data?.error ?? JSON.stringify(data));
+      }
+    } catch (err) {
       setTransactions([]);
+      setApiError(String(err));
     }
     setLoading(false);
   }, [filterMonth]);
@@ -132,7 +140,6 @@ export default function AccountingPage() {
     }
   }
 
-  // Generate month options (current year back to 5 years ago) + "全部"
   const monthOptions: string[] = ["全部"];
   const now = new Date();
   for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) {
@@ -161,7 +168,6 @@ export default function AccountingPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-neutral-200 p-4">
           <p className="text-xs text-neutral-500 mb-1">本月收入</p>
@@ -178,6 +184,12 @@ export default function AccountingPage() {
           </p>
         </div>
       </div>
+
+      {apiError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 font-mono break-all">
+          ⚠️ API 錯誤：{apiError}
+        </div>
+      )}
 
       {importing && importProgress && (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
@@ -204,7 +216,6 @@ export default function AccountingPage() {
         </div>
       )}
 
-      {/* Filter */}
       <div className="flex items-center gap-3 mb-4">
         <Filter className="h-4 w-4 text-neutral-400" />
         <select
@@ -218,7 +229,6 @@ export default function AccountingPage() {
         </select>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
