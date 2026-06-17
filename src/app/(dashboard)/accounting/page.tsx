@@ -37,11 +37,12 @@ export default function AccountingPage() {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ imported: number; total: number; message: string } | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; sheet: string } | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,19 @@ export default function AccountingPage() {
     }
   }
 
+  async function handleClearAll() {
+    if (!confirm("確定要清除所有收支資料？此操作無法復原。")) return;
+    const res = await fetch("/api/transactions", { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`已清除 ${data.deleted} 筆資料`);
+      fetchTransactions();
+    } else {
+      alert("清除失敗：" + (data.error ?? "未知錯誤"));
+    }
+  }
+
+  // Generate month options (current year back to 5 years ago) + "全部"
   const monthOptions: string[] = ["全部"];
   const now = new Date();
   for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) {
@@ -157,6 +171,11 @@ export default function AccountingPage() {
           <p className="text-sm text-neutral-500 mt-1">記錄花店每筆收支明細</p>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
+            <Button variant="outline" onClick={handleClearAll} className="text-red-500 border-red-200 hover:bg-red-50">
+              清除全部
+            </Button>
+          )}
           <label className={`inline-flex items-center gap-2 h-9 px-4 py-2 text-sm font-medium rounded-md border border-neutral-200 bg-white shadow-sm hover:bg-neutral-100 cursor-pointer ${importing ? "opacity-50 pointer-events-none" : ""}`}>
             <Upload className="h-4 w-4" />
             {importing ? (importProgress?.total ? `${importProgress.imported} / ${importProgress.total} 筆` : "處理中…") : "匯入 Excel"}
@@ -168,6 +187,7 @@ export default function AccountingPage() {
         </div>
       </div>
 
+      {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-neutral-200 p-4">
           <p className="text-xs text-neutral-500 mb-1">本月收入</p>
@@ -216,6 +236,7 @@ export default function AccountingPage() {
         </div>
       )}
 
+      {/* Filter */}
       <div className="flex items-center gap-3 mb-4">
         <Filter className="h-4 w-4 text-neutral-400" />
         <select
@@ -229,6 +250,7 @@ export default function AccountingPage() {
         </select>
       </div>
 
+      {/* Table */}
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
