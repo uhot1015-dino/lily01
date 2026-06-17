@@ -173,14 +173,25 @@ export async function POST(req: NextRequest) {
         send({ stage: "importing", imported, total, message: `寫入中… ${imported} / ${total}` });
       }
 
-      const paidRecords = records.filter(
-        r => r.paymentStatus === PaymentStatus.PAID && r.totalAmount && r.totalAmount > 0 && r.status !== OrderStatus.CANCELLED
-      );
-      if (paidRecords.length > 0) {
+      // Create income transactions for ALL PAID orders that haven't been accounted yet.
+      // This covers both newly imported orders and any that were imported before without
+      // transactions being created (e.g. due to previous errors or re-imports).
+      send({ stage: "importing", imported, total, message: "建立收入記錄中…" });
+      const unaccountedPaid = await prisma.order.findMany({
+        where: {
+          paymentStatus: PaymentStatus.PAID,
+          totalAmount: { gt: 0 },
+          accountedAt: null,
+          status: { not: OrderStatus.CANCELLED },
+        },
+        select: { id: true, orderDate: true, channel: true, productName: true, totalAmount: true },
+      });
+
+      if (unaccountedPaid.length > 0) {
         const now = new Date();
         await prisma.transaction.createMany({
-          data: paidRecords.map(r => {
-            const date = r.orderDate instanceof Date ? r.orderDate : now;
+          data: unaccountedPaid.map(o => {
+            const date = o.orderDate ?? now;
             return {
               date,
               yearMonth: getYearMonth(date),
@@ -189,17 +200,19 @@ export async function POST(req: NextRequest) {
               needsReimburse: false,
               category: "收入",
               subject: "商品銷售",
-              item: r.channel || "訂單",
-              amount: r.totalAmount!,
+              item: o.channel || "訂單",
+              amount: o.totalAmount!,
               receiptType: "無憑證",
-              notes: `訂單匯入：${r.productName}`,
+              notes: `訂單匯入：${o.productName}`,
               recorderId: session.user.id,
             };
           }),
           skipDuplicates: false,
         });
+        // Batch-update accountedAt so these orders are not processed again next import
+        const ids = unaccountedPaid.map(o => o.id);
         await prisma.order.updateMany({
-          where: { paymentStatus: PaymentStatus.PAID, totalAmount: { gt: 0 }, accountedAt: null, status: { not: OrderStatus.CANCELLED } },
+          where: { id: { in: ids } },
           data: { accountedAt: now },
         });
       }
