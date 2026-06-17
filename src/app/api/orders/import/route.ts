@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { OrderStatus, PaymentStatus } from "@/generated/prisma/client";
 import type { Prisma } from "@/generated/prisma/client";
+import { getYearMonth, getWeekLabel } from "@/lib/utils";
 
 function parseDate(val: unknown): Date | null {
   if (!val) return null;
@@ -162,6 +163,39 @@ export async function POST(req: NextRequest) {
         });
         imported += result.count;
         send({ stage: "importing", imported, total, message: `寫入中… ${imported} / ${total}` });
+      }
+
+      // Auto-create income transactions for PAID orders with amounts
+      const paidRecords = records.filter(
+        r => r.paymentStatus === PaymentStatus.PAID && r.totalAmount && r.totalAmount > 0 && r.status !== OrderStatus.CANCELLED
+      );
+      if (paidRecords.length > 0) {
+        const now = new Date();
+        await prisma.transaction.createMany({
+          data: paidRecords.map(r => {
+            const date = r.orderDate instanceof Date ? r.orderDate : now;
+            return {
+              date,
+              yearMonth: getYearMonth(date),
+              weekLabel: getWeekLabel(date),
+              paymentMethod: "銀行轉帳-玉山",
+              needsReimburse: false,
+              category: "收入",
+              subject: "商品銷售",
+              item: r.channel || "訂單",
+              amount: r.totalAmount!,
+              receiptType: "無憑證",
+              notes: `訂單匯入：${r.productName}`,
+              recorderId: session.user.id,
+            };
+          }),
+          skipDuplicates: false,
+        });
+        // Mark all unaccounted PAID orders as accounted
+        await prisma.order.updateMany({
+          where: { paymentStatus: PaymentStatus.PAID, totalAmount: { gt: 0 }, accountedAt: null, status: { not: OrderStatus.CANCELLED } },
+          data: { accountedAt: now },
+        });
       }
 
       send({ stage: "done", imported, skipped, total });
